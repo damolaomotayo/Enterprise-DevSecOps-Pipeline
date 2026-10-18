@@ -1,0 +1,16 @@
+# Scan with gitleaks' built-in rules, but skip generated and third-party folders.
+title = "devsecops-pipeline gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated or third-party directories"
+paths = [
+  '''(^|/)\.venv/''',
+  '''(^|/)\.cache/''',
+  '''(^|/)artifacts/''',
+  '''(^|/)\.keys/''',
+  '''(^|/)\.demo/''',
+  '''(^|/)\.git/''',
+]

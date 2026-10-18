@@ -1,0 +1,74 @@
+name: DevSecOps Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      negative_test:
+        description: "Also prove the gates catch an insecure app (about 15 min)"
+        type: boolean
+        default: false
+
+# Least privilege: the workflow can only read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - run: python -m unittest discover -s tests -v
+
+  security-pipeline:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history, so secret scanning covers every commit
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Python scanners
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+      - name: Run the pipeline (same scripts you run on EC2)
+        run: ./pipeline/run-all.sh
+      - name: Upload reports (SBOM, scan results, ZAP report)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-reports
+          path: |
+            artifacts/
+            !artifacts/zap-rules.conf
+          if-no-files-found: ignore
+
+  negative-test:
+    if: github.event_name == 'workflow_dispatch' && inputs.negative_test
+    needs: security-pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+      - name: Prove every gate catches the insecure app
+        run: ./scripts/demo_insecure.sh
